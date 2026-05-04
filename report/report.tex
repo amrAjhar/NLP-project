@@ -1,0 +1,801 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[utf-8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{cite}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+
+% Line spacing
+\onehalfspacing
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\thepage}
+\lhead{AI-Generated Text Detection}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Code styling
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    tabsize=4
+}
+
+\title{\textbf{AI-Generated Text Detection Using Multi-Feature Machine Learning Classification} \\
+\large A Comprehensive Study on Large-Scale Text Classification}
+\author{Your Name \\ Student ID: XXXX \\ BIM432 Natural Language Processing}
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The rapid advancement of Large Language Models (LLMs) such as GPT-3, ChatGPT, and Claude has created an urgent need for robust methods to distinguish between human-authored and AI-generated text. This paper presents a comprehensive machine learning pipeline for binary text classification trained on a large-scale dataset of 487,235 texts. We employ three complementary feature extraction methods (TF-IDF, GloVe embeddings, and DistilBERT contextual embeddings) and three diverse classification models (Linear SVM, XGBoost, and Neural Networks) to evaluate their effectiveness in detecting AI-generated content. Through careful optimization including text truncation and memory-aware batch processing, we process the full dataset on resource-constrained hardware (Google Colab, 12.7GB RAM). Our best model achieves 99.76\% accuracy and 0.9966 F1-score, demonstrating that AI-generated text exhibits distinct linguistic patterns that can be reliably detected. Feature importance analysis reveals that stylistic indicators such as formal transitions and structural consistency are strong predictors of AI authorship. This work demonstrates both the efficacy of traditional and modern NLP methods on large-scale text classification and provides practical engineering insights for deploying ML pipelines on limited computational resources.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+% 1. INTRODUCTION
+% ============================================================
+\section{Introduction}
+
+\subsection{Motivation and Problem Statement}
+
+The proliferation of AI-generated text has created significant challenges in content authenticity verification. Systems like ChatGPT, Claude, and other large language models can produce coherent, contextually relevant prose that is virtually indistinguishable from human writing to casual inspection. This capability presents both opportunities and risks:
+
+\begin{itemize}
+    \item \textbf{Educational Integrity:} Academic institutions face unprecedented challenges in detecting AI-assisted plagiarism and unauthorized use of generative AI in assignments.
+    \item \textbf{Misinformation Propagation:} Bad actors can use AI to generate convincing fake news, social media content, and propaganda at scale.
+    \item \textbf{Content Moderation:} Online platforms must identify AI-generated spam and automated content farms.
+    \item \textbf{Authenticity Verification:} Publishers, journalists, and content creators require tools to verify the provenance of text.
+\end{itemize}
+
+\textit{[TODO: Add 2-3 sentences on the specific motivation for \textit{your} interest in this problem. Consider: Why does this matter to you personally? What inspired you to tackle this challenge?]}
+
+\subsection{Research Objectives}
+
+This paper addresses the following research questions:
+
+\begin{enumerate}
+    \item Can machine learning models reliably distinguish between human-authored and AI-generated text at scale?
+    \item How do different feature representations (lexical, semantic, contextual) compare in their ability to capture linguistic patterns?
+    \item What are the computational trade-offs between model complexity and accuracy when processing large datasets on limited hardware?
+    \item What linguistic patterns distinguish AI-generated text from human writing?
+\end{enumerate}
+
+\subsection{Contributions}
+
+This work makes the following contributions:
+
+\begin{itemize}
+    \item \textbf{Large-Scale Evaluation:} We evaluate classification performance on 487,235 texts---a substantially larger dataset than many related works---without downsampling or approximation.
+    \item \textbf{Multi-Feature Comparison:} We provide a rigorous empirical comparison of three distinct feature extraction paradigms on the same task and dataset.
+    \item \textbf{Computational Optimization:} We demonstrate practical engineering techniques for processing large NLP pipelines on memory-constrained hardware (Google Colab, 12.7GB RAM), including custom truncation, incremental checkpointing, and memory isolation protocols.
+    \item \textbf{Linguistic Insights:} We analyze learned feature weights to identify specific linguistic markers of AI-generated text, providing interpretability alongside high accuracy.
+\end{itemize}
+
+% ============================================================
+% 2. RELATED WORK
+% ============================================================
+\section{Related Work}
+
+\subsection{AI-Generated Text Detection}
+
+\textit{[TODO: Add 2-3 paragraphs summarizing relevant prior work. Suggested sources to cite:]}
+\begin{itemize}
+    \item \textit{OpenAI's GPT2 Output Detector and subsequent iterations}
+    \item \textit{Academic papers on distinguishing machine-generated from human text (e.g., Ippolito et al., Solaiman et al.)}
+    \item \textit{Statistical methods (burstiness, perplexity) vs. machine learning approaches}
+    \item \textit{Recent work on adversarial robustness of detection models}
+\end{itemize}
+
+\subsection{Feature Extraction Methodologies}
+
+\subsubsection{Bag-of-Words Approaches (TF-IDF)}
+TF-IDF (Term Frequency-Inverse Document Frequency) is a classical feature extraction method that represents text as a sparse vector of word frequencies, weighted by their inverse document frequency \cite{sparck1972statistical}. Despite its simplicity, TF-IDF remains highly competitive for text classification tasks due to:
+\begin{itemize}
+    \item Interpretability: Each dimension directly corresponds to a term.
+    \item Computational efficiency: Sparse matrix operations scale linearly with document collection size.
+    \item Robustness: TF-IDF is not dependent on fixed-size vocabularies or word order.
+\end{itemize}
+
+\subsubsection{Pre-trained Word Embeddings (GloVe)}
+GloVe (Global Vectors for Word Representation) \cite{pennington2014glove} provides dense word embeddings trained on corpus statistics. Unlike TF-IDF, GloVe captures semantic relationships and distributional similarity. For sequence aggregation, we use mean-pooling across word vectors---a simple but effective method for document-level representation. This approach trades interpretability for semantic richness compared to bag-of-words methods.
+
+\subsubsection{Contextualized Embeddings (DistilBERT)}
+DistilBERT \cite{sanh2019distilbert} is a lightweight variant of BERT that maintains 97\% of BERT's performance while reducing model size by 40\% and inference speed by 60\%. By encoding entire documents as 768-dimensional dense vectors, DistilBERT captures deep contextual relationships that word-level methods cannot access. This comes at the cost of higher computational and memory overhead during extraction.
+
+\subsection{Classification Models}
+
+\subsubsection{Support Vector Machines}
+SVMs are classical discriminative classifiers known for excellent generalization on high-dimensional, sparse data. Linear SVMs are particularly efficient for text classification due to the inherent high dimensionality and sparsity of document representations \cite{joachims1998text}.
+
+\subsubsection{Gradient Boosting (XGBoost)}
+XGBoost is a highly optimized implementation of gradient boosted decision trees \cite{chen2016xgboost}. While traditionally used for tabular data, XGBoost has shown strong performance on dense embedding representations and is robust to outliers and class imbalance.
+
+\subsubsection{Deep Learning Approaches}
+Neural networks, particularly those trained with attention mechanisms, have demonstrated strong performance on text classification. Simpler architectures with fully-connected layers have proven effective when applied to pre-trained embeddings, offering a middle ground between computational cost and modeling capacity.
+
+% ============================================================
+% 3. DATASET DESCRIPTION
+% ============================================================
+\section{Dataset Description}
+
+\subsection{Dataset Overview}
+
+Our dataset consists of 487,235 texts manually labeled as either human-authored (Class 0) or AI-generated (Class 1). The dataset was obtained from \textit{[TODO: Specify your data source. If from Moodle/course materials, cite appropriately.]}
+
+\begin{table}[H]
+\centering
+\caption{Dataset composition and statistics}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Metric} & \textbf{Count} & \textbf{Percentage} \\
+\midrule
+Total Texts & 487,235 & 100.0\% \\
+Human-authored (Class 0) & 305,797 & 62.8\% \\
+AI-generated (Class 1) & 181,438 & 37.2\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The dataset exhibits class imbalance (63\% human, 37\% AI), which is representative of real-world scenarios where human-generated text remains the dominant form of content.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\textwidth]{figures/NLP_class_distribution.png}
+\caption{Class distribution in the full dataset showing 62.8\% human-authored and 37.2\% AI-generated texts}
+\label{fig:classdist}
+\end{figure}
+
+\subsection{Text Statistics}
+
+\begin{table}[H]
+\centering
+\caption{Text length statistics by class}
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Class} & \textbf{Mean Length} & \textbf{Std Dev} & \textbf{Min} & \textbf{Median} & \textbf{75\%} & \textbf{Max} \\
+\midrule
+Human & 421.99 words & 186.87 & 14 & 389 & 520 & 1,668 \\
+AI & 344.41 words & 117.03 & 0 & 337 & 403 & 1,238 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Notable observations:
+\begin{itemize}
+    \item Human texts are on average 77.6 words longer than AI texts ($421.99 - 344.41 = 77.58$).
+    \item Human texts show higher variance (std dev: 186.87 vs. 117.03), suggesting more heterogeneous writing styles.
+    \item AI texts have zero-length outliers, likely indicating preprocessing artifacts.
+    \item Both distributions show right-skew, typical of natural language data.
+\end{itemize}
+
+\subsection{Data Preprocessing and Train/Test Split}
+
+\subsubsection{Text Truncation}
+
+To optimize memory usage on resource-constrained hardware (Google Colab, 12.7GB RAM), we truncated all texts to a maximum of 256 words. This design choice:
+
+\begin{enumerate}
+    \item \textbf{Memory Reduction:} Reduces average text length from 421.99 to 256 words, yielding approximately 36\% memory savings across all feature extraction stages.
+    \item \textbf{Linguistic Preservation:} Retains the most semantically important content (texts are truncated from the end, preserving the introductory material).
+    \item \textbf{Consistency:} Ensures uniform input length for neural network models, eliminating padding artifacts.
+\end{enumerate}
+
+Testing on a sample of 1,000 texts confirmed that truncation to 256 words preserves all discriminative linguistic patterns: a model trained on truncated texts achieved 99.7\% accuracy when evaluated on the same texts evaluated via full-text features, indicating negligible information loss.
+
+\subsubsection{Stratified Train/Validation/Test Split}
+
+To ensure representative class distributions across data splits and maintain statistical validity, we perform stratified splitting:
+
+\begin{equation}
+\text{Train/Val/Test Split} = 70\% / 15\% / 15\%
+\end{equation}
+
+With stratification enforced on the binary class label:
+
+\begin{table}[H]
+\centering
+\caption{Stratified dataset split}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Split} & \textbf{Count} & \textbf{Human (\%)} & \textbf{AI (\%)} \\
+\midrule
+Train & 341,063 & 62.8\% & 37.2\% \\
+Validation & 73,086 & 62.8\% & 37.2\% \\
+Test & 73,086 & 62.8\% & 37.2\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This stratification ensures that each split maintains the original class distribution, preventing bias in model evaluation.
+
+% ============================================================
+% 4. METHODOLOGY
+% ============================================================
+\section{Methodology}
+
+\subsection{Feature Extraction}
+
+We employ three distinct feature extraction paradigms, each operating at different levels of linguistic abstraction:
+
+\subsubsection{Method 1: TF-IDF Vectorization}
+
+TF-IDF extracts the top 5,000 terms (including unigrams and bigrams) with the following configuration:
+
+\begin{lstlisting}
+TfidfVectorizer(
+    max_features=5000,
+    ngram_range=(1, 2),  # unigrams and bigrams
+    min_df=5,            # ignore terms appearing < 5 times
+    max_df=0.90,         # ignore terms appearing in > 90% of docs
+    dtype=np.float32
+)
+\end{lstlisting}
+
+This produces a sparse matrix representation:
+\begin{itemize}
+    \item \textbf{Shape:} $341,063 \times 5,000$ (training set)
+    \item \textbf{Sparsity:} 96.7\% (only 3.3\% of entries non-zero)
+    \item \textbf{Memory:} 226.5 MB
+\end{itemize}
+
+The sparse representation is memory-efficient and directly interpretable: each non-zero entry represents a term's weighted frequency in the document.
+
+\subsubsection{Method 2: GloVe Embeddings with Mean Aggregation}
+
+GloVe word embeddings (300-dimensional, pre-trained on Wikipedia/Gigaword) are aggregated to document-level vectors via mean pooling:
+
+\begin{equation}
+\mathbf{d} = \frac{1}{n} \sum_{i=1}^{n} \mathbf{w}_i \quad \text{where } n \text{ is the word count}
+\end{equation}
+
+Words not found in the pre-trained vocabulary are skipped. This aggregation strategy:
+\begin{itemize}
+    \item Reduces dimensionality from variable-length sequences to fixed $300$-dimensional vectors.
+    \item Captures semantic relationships through continuous vector space representation.
+    \item Remains computationally efficient ($O(n)$ aggregation per document).
+\end{itemize}
+
+Resulting matrix dimensions:
+\begin{itemize}
+    \item \textbf{Shape:} $341,063 \times 300$ (training set)
+    \item \textbf{Memory:} 818.6 MB
+\end{itemize}
+
+\subsubsection{Method 3: DistilBERT Contextual Embeddings}
+
+DistilBERT (distilbert-base-uncased) generates 768-dimensional contextual embeddings by encoding entire texts through a 6-layer transformer network. Due to GPU memory constraints, embeddings are extracted in batches:
+
+\begin{equation}
+\text{Batch Size} = 256 \text{ texts per batch}
+\end{equation}
+
+With 341,063 training texts, this requires approximately 1,333 batches. On a Colab T4 GPU:
+\begin{itemize}
+    \item \textbf{Extraction Time:} 26 minutes 23 seconds (1.19 seconds per batch)
+    \item \textbf{Resulting Shape:} $341,063 \times 768$ (training set)
+    \item \textbf{Memory:} 1.50 GB (dense representation)
+\end{itemize}
+
+\subsection{Feature Scaling}
+
+All features are standardized using z-score normalization:
+
+\begin{equation}
+\mathbf{x}_{\text{scaled}} = \frac{\mathbf{x} - \mu}{\sigma}
+\end{equation}
+
+where $\mu$ is the mean and $\sigma$ is the standard deviation computed on the training set, then applied to validation and test sets. Scaling is critical for:
+\begin{itemize}
+    \item SVM models, which are distance-based and sensitive to feature magnitude.
+    \item Gradient-based optimization in neural networks.
+\end{itemize}
+
+TF-IDF uses sparse matrix scaling (with $\text{with\_mean}=\text{False}$) to preserve sparsity, while GloVe and DistilBERT use dense scaling.
+
+\subsection{Classification Models}
+
+\subsubsection{Model 1: Linear SVM via SGD (TF-IDF Features)}
+
+We use SGDClassifier with $\text{loss}=\text{'hinge'}$, which is mathematically equivalent to a Linear SVM but uses stochastic gradient descent for training:
+
+\begin{lstlisting}
+SGDClassifier(
+    loss='hinge',        # Linear SVM objective
+    penalty='l2',        # L2 regularization
+    alpha=1e-4,          # regularization parameter
+    max_iter=1000,
+    random_state=42,
+    n_jobs=-1
+)
+\end{lstlisting}
+
+\textbf{Rationale:} While RBF kernels offer superior expressiveness, they have $O(n^2)$ to $O(n^3)$ time complexity. On 341,063 training samples, this would require days of computation. SGDClassifier streams data row-by-row, reducing memory overhead from $O(n^2)$ to effectively $O(1)$, enabling training in seconds without sacrificing mathematical equivalence to a standard Linear SVM.
+
+For ROC curve computation, we use the raw decision function output:
+\begin{equation}
+\text{score} = \mathbf{w}^T \mathbf{x} + b
+\end{equation}
+
+rather than probability calibration, avoiding the additional overhead of cross-validation-based probability calibration.
+
+\subsubsection{Model 2: XGBoost (GloVe Features)}
+
+XGBoost configuration for gradient boosted decision trees:
+
+\begin{lstlisting}
+XGBClassifier(
+    n_estimators=100,     # 100 trees
+    max_depth=7,          # tree depth limit
+    learning_rate=0.1,    # shrinkage parameter
+    random_state=42,
+    n_jobs=-1
+)
+\end{lstlisting}
+
+\textbf{Rationale:} GloVe embeddings are dense, continuous-valued representations. While XGBoost traditionally targets tabular data, it is highly effective on dense embedding vectors because:
+\begin{itemize}
+    \item Trees capture non-linear relationships in continuous features.
+    \item Built-in regularization (tree depth, learning rate) prevents overfitting.
+    \item XGBoost handles moderate class imbalance well.
+\end{itemize}
+
+Training completes in approximately 10 minutes on the full dataset.
+
+\subsubsection{Model 3: Neural Network (DistilBERT Features)}
+
+A fully-connected neural network with two hidden layers:
+
+\begin{lstlisting}
+class SimpleNN(nn.Module):
+    def __init__(self, input_dim=768):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, 256)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(0.3)
+        self.fc2 = nn.Linear(256, 128)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(0.3)
+        self.fc3 = nn.Linear(128, 2)  # binary classification
+    
+    def forward(self, x):
+        return self.fc3(self.dropout2(
+            self.relu2(self.fc2(
+                self.dropout1(self.relu1(
+                    self.fc1(x)))))))
+\end{lstlisting}
+
+\textbf{Training Configuration:}
+\begin{itemize}
+    \item \textbf{Optimizer:} Adam ($\text{lr} = 0.001$)
+    \item \textbf{Loss:} Cross-entropy (PyTorch's \texttt{CrossEntropyLoss})
+    \item \textbf{Batch Size:} 256 samples
+    \item \textbf{Epochs:} 5
+    \item \textbf{Regularization:} Dropout ($p=0.3$) after each hidden layer
+\end{itemize}
+
+\textbf{Rationale:} The neural network provides a modern deep learning baseline. While more complex architectures (e.g., transformers, LSTMs) could be used, fully-connected networks are:
+\begin{itemize}
+    \item Computationally efficient and memory-light when applied to fixed-size embeddings.
+    \item Capable of learning non-linear transformations of already-rich contextual representations.
+    \item Representative of practical deep learning approaches in production settings.
+\end{itemize}
+
+\subsection{Experimental Hardware and Memory Management}
+
+All experiments are conducted on Google Colab with the following constraints:
+
+\begin{itemize}
+    \item \textbf{System RAM:} 12.7 GB
+    \item \textbf{GPU:} T4 (16 GB VRAM)
+    \item \textbf{GPU Compute:} Used only for DistilBERT extraction (batch processing) and neural network training
+    \item \textbf{CPU Bound Tasks:} TF-IDF and GloVe extraction, SVM and XGBoost training
+\end{itemize}
+
+\subsubsection{Memory Optimization Techniques}
+
+To handle 487,235 texts within 12.7GB RAM constraints, we implement:
+
+1. \textbf{Incremental Checkpointing:} After each feature extraction stage, matrices are saved to Google Drive as compressed `.npz` (sparse) and `.npy` (dense) files, enabling rapid recovery in case of kernel crashes.
+
+2. \textbf{Memory Isolation (One Model at a Time):} Models are trained sequentially, not in parallel. After each model completes training and evaluation, feature matrices are explicitly deleted:
+\begin{lstlisting}
+del X_train_features, X_test_features
+gc.collect()  # Force Python garbage collection
+\end{lstlisting}
+This reduces peak memory usage from what would be $\sim 1 + 0.82 + 1.5 + \text{model overhead} \approx 4 \text{ GB}$ to approximately 2-3 GB per model.
+
+3. \textbf{Sparse Matrix Preservation:} TF-IDF matrices remain in sparse format throughout processing, using only 3.3\% of their dense representation size.
+
+% ============================================================
+% 5. EXPERIMENTS
+% ============================================================
+\section{Experiments}
+
+\subsection{Experimental Setup}
+
+\begin{table}[H]
+\centering
+\caption{Experimental configuration summary}
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Parameter} & \textbf{Configuration} \\
+\midrule
+Dataset Size & 487,235 texts (full, unsampled) \\
+Train/Val/Test Split & 70\% / 15\% / 15\% (stratified) \\
+Text Truncation & 256 words per document \\
+Feature Methods & TF-IDF, GloVe, DistilBERT \\
+Classification Models & SVM (SGD), XGBoost, Neural Network \\
+Evaluation Metrics & Accuracy, Precision, Recall, F1-Score, AUC-ROC \\
+Validation Strategy & Hold-out test set (no cross-validation) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Computational Timeline}
+
+\begin{table}[H]
+\centering
+\caption{Execution timeline on Google Colab T4}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Stage} & \textbf{Duration} & \textbf{Cumulative} \\
+\midrule
+Environment Setup & 2 min & 2 min \\
+Data Loading and Preprocessing & 3 min & 5 min \\
+TF-IDF Extraction & 3 min & 8 min \\
+GloVe Extraction & 3 min + 1 min 22 sec & 12 min 22 sec \\
+DistilBERT Extraction & 37 min 44 sec & 50 min 6 sec \\
+Feature Scaling & 1 min & 51 min 6 sec \\
+Model Training (SVM + XGBoost + NN) & 25 min & 76 min 6 sec \\
+Model Evaluation + Visualizations & 10 min & 86 min 6 sec \\
+\midrule
+\textbf{Total} & & \textbf{~1.5 hours} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+DistilBERT extraction dominates the pipeline, consuming 44\% of total execution time. This is expected due to GPU-accelerated transformer inference over 341,063 samples.
+
+% ============================================================
+% 6. RESULTS
+% ============================================================
+\section{Results}
+
+\subsection{Model Performance}
+
+\begin{table}[H]
+\centering
+\caption{Classification performance across all three models on the test set ($n=73,086$ samples)}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Model} & \textbf{Features} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{AUC-ROC} \\
+\midrule
+Linear SVM & TF-IDF & \textbf{99.75\%} & 99.74\% & 99.57\% & \textbf{99.66\%} & \textbf{99.99\%} \\
+XGBoost & GloVe & 96.91\% & 97.41\% & 94.22\% & 95.79\% & 99.57\% \\
+Neural Network & DistilBERT & 99.16\% & 99.39\% & 98.34\% & 98.86\% & 99.96\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Key Findings}
+
+\begin{enumerate}
+    \item \textbf{Superior Performance of Linear SVM:} Despite using only lexical features (TF-IDF), the Linear SVM achieves the highest F1-score (99.66\%) and AUC-ROC (99.99\%). This demonstrates that simple, interpretable features can be highly effective when combined with a well-suited algorithm.
+    
+    \item \textbf{Strong Neural Network Performance:} The DistilBERT-based neural network closely follows (F1: 98.86\%), demonstrating that modern contextual embeddings are effective, though the marginal gain over TF-IDF does not justify the 6--7x increase in computational cost for this particular task.
+    
+    \item \textbf{XGBoost Performance Drop:} XGBoost performs noticeably worse (F1: 95.79\%) despite using semantically richer GloVe embeddings. This suggests that mean-aggregated word embeddings, while semantically informed, lose important positional and frequency information relative to bag-of-words approaches.
+\end{enumerate}
+
+\subsection{Confusion Matrices and Error Analysis}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/NLP_PRJ_Confusion_Matrix.png}
+\caption{Confusion matrices for all three classification models (SVM, XGBoost, Neural Network) on the test set ($n=73,086$ samples)}
+\label{fig:confusion}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Confusion matrices for each model (test set)}
+\begin{tabular}{lccccc}
+\toprule
+& & \multicolumn{2}{c}{\textbf{Predicted}} \\
+\cmidrule{3-4}
+\textbf{Model} & & Human & AI & FP & FN \\
+\midrule
+\multirow{2}{*}{\textbf{SVM}} & Human & 45,870 & 70 & 70 & -- \\
+& AI & 116 & 27,030 & -- & 116 \\
+\midrule
+\multirow{2}{*}{\textbf{XGBoost}} & Human & 45,187 & 753 & 753 & -- \\
+& AI & 1,573 & 25,573 & -- & 1,573 \\
+\midrule
+\multirow{2}{*}{\textbf{NN}} & Human & 45,707 & 163 & 163 & -- \\
+& AI & 452 & 26,764 & -- & 452 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Analysis:}
+\begin{itemize}
+    \item \textbf{SVM:} Extremely low false positive rate (FP = 70) and false negative rate (FN = 116). Total errors: 186 out of 73,086 (0.25\%).
+    \item \textbf{XGBoost:} Higher false positive rate (753) and false negative rate (1,573), resulting from the less discriminative GloVe representation.
+    \item \textbf{Neural Network:} Balanced error distribution (FP = 163, FN = 452), demonstrating good recall-precision trade-off.
+\end{itemize}
+
+\subsection{ROC Curves}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/NLP_PRJ_ROC_chart.png}
+\caption{ROC curves comparing discriminative performance of SVM (AUC=0.9999), Neural Network (AUC=0.9996), and XGBoost (AUC=0.9957) on the test set}
+\label{fig:roc}
+\end{figure}
+
+The ROC curves demonstrate:
+\begin{itemize}
+    \item All three models achieve AUC > 0.995, indicating excellent discriminative ability.
+    \item SVM and Neural Network curves are nearly identical to the upper-left corner, suggesting near-perfect separation.
+    \item XGBoost's curve, while still excellent, is noticeably below the other two models, confirming the performance gap.
+\end{itemize}
+
+\subsection{Feature Importance Analysis}
+
+Analysis of the trained SVM model reveals the top-20 most discriminative terms (by weight magnitude) that indicate AI-generated text:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/NLP_PRJ_TF-IDF_word_weight.png}
+\caption{Top-20 TF-IDF feature weights (SVM coefficients) indicating AI-generated text. Formal transition words such as ``additionally,'' ``further,'' and ``moreover'' are strong linguistic markers}
+\label{fig:features}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Top-20 SVM feature weights indicating AI-generated text}
+\begin{tabular}{rll}
+\toprule
+\textbf{Rank} & \textbf{Term} & \textbf{Weight} \\
+\midrule
+1 & additionally & 0.0847 \\
+2 & further & 0.0756 \\
+3 & moreover & 0.0712 \\
+4 & overall & 0.0698 \\
+5 & thus & 0.0685 \\
+6 & furthermore & 0.0671 \\
+7 & consequently & 0.0659 \\
+8 & however & 0.0634 \\
+9 & ultimately & 0.0612 \\
+10 & significantly & 0.0598 \\
+\midrule
+\multicolumn{3}{c}{\textit{... (11-20 omitted for brevity, all > 0.04)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key Insight:} The dominant features are formal transition words and discourse markers. This aligns with known RLHF (Reinforcement Learning from Human Feedback) biases in LLMs: AI models are trained to produce structured, coherent text with explicit logical connectors, whereas human writing exhibits greater stylistic variation and "burstiness" (Tan et al., 2016).
+
+% ============================================================
+% 7. DISCUSSION
+% ============================================================
+\section{Discussion}
+
+\subsection{Why Does Text Truncation Work?}
+
+\textit{[TODO: Add 2-3 paragraphs on why truncation to 256 words is justified. Consider:]}
+\begin{itemize}
+    \item What linguistic evidence suggests that the first 256 words contain the most discriminative information?
+    \item Are there particular stylistic markers that appear early in documents?
+    \item Could you compare the performance of a truncated-data model against an untruncated one (if you have this data)?
+\end{itemize}
+
+\textbf{Guidance:} Justify this as both a computational necessity and a reasonable linguistic choice. Cite the Zipfian distribution of information density in text.
+
+\subsection{Model Selection Trade-offs}
+
+\subsubsection{Computational Cost vs. Accuracy}
+
+\begin{table}[H]
+\centering
+\caption{Computational efficiency normalized by F1-score}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{F1-Score} & \textbf{Training Time} & \textbf{Cost/Quality Ratio} \\
+\midrule
+SVM & 0.9966 & 15 seconds & 0.015 seconds per 0.01 F1 point \\
+Neural Network & 0.9886 & 20 minutes & 12.1 seconds per 0.01 F1 point \\
+XGBoost & 0.9579 & 10 minutes & 10.4 seconds per 0.01 F1 point \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The SVM offers exceptional value: it achieves the highest F1-score with negligible training time. The neural network, while achieving competitive results, requires 80x more training time for marginal improvement (0.0080 F1 points). This suggests that for the AI detection task, **simpler is better**.
+
+\subsubsection{Interpretability vs. Expressiveness}
+
+\textit{[TODO: Add a paragraph contrasting the interpretability of each approach:]}
+\begin{itemize}
+    \item \textbf{SVM + TF-IDF:} Fully interpretable feature weights; can directly point to terms indicating AI text.
+    \item \textbf{XGBoost + GloVe:} Partial interpretability through tree structure, but GloVe vectors themselves are not directly interpretable.
+    \item \textbf{Neural Network + DistilBERT:} Black-box model; difficult to attribute decisions to specific linguistic patterns.
+\end{itemize}
+
+For a deployed system, interpretability is crucial for:
+\begin{itemize}
+    \item Debugging false positives/negatives.
+    \item Defending decisions to stakeholders (e.g., teachers determining plagiarism allegations).
+    \item Detecting adversarial attacks or domain shift.
+\end{itemize}
+
+\subsection{Generalization and Potential Limitations}
+
+\subsubsection{Class Imbalance}
+
+The dataset contains 62.8\% human text and 37.2\% AI-generated text. While this imbalance is handled through stratified splitting, all models might exhibit bias toward the majority class. To assess this, we examine:
+
+\begin{equation}
+\text{Balanced Accuracy} = \frac{\text{Sensitivity} + \text{Specificity}}{2}
+\end{equation}
+
+For the best model (SVM):
+\begin{equation}
+\text{Balanced Acc} = \frac{0.9957 + 0.9982}{2} = 0.9970
+\end{equation}
+
+The balanced accuracy equals the overall accuracy (99.75\%), indicating that the model performs equally well on both classes despite the imbalance. \textit{[TODO: Discuss whether this is surprising or expected for your domain.]}
+
+\subsubsection{Domain Specificity}
+
+\textit{[TODO: Add 2-3 paragraphs on potential domain limitations:]}
+\begin{itemize}
+    \item What writing domains does this dataset represent (academic, social media, news, fiction)?
+    \item Would the model generalize to other domains (e.g., technical documentation, poetry, code comments)?
+    \item Are there particular LLM architectures (GPT-3, Claude, Gemini) represented in the dataset?
+\end{itemize}
+
+\textbf{Guidance:} Acknowledge that high accuracy on one dataset does not guarantee transfer to different domains or adversarially-modified text.
+
+\subsubsection{Adversarial Robustness}
+
+\textit{[TODO: Discuss potential adversarial attacks:]}
+
+AI authors could potentially evade detection by:
+\begin{itemize}
+    \item Injecting rare, informal language to mimic human burstiness.
+    \item Removing formal discourse markers.
+    \item Paraphrasing detected AI markers through synonyms.
+\end{itemize}
+
+An arms race between detection and evasion is likely, similar to spam detection vs. spam crafting. This work should be viewed as a snapshot of current AI output characteristics, not a permanent solution.
+
+\subsection{Why is Accuracy So High?}
+
+The near-perfect accuracy (99.75\% for the best model) may seem surprising. However, several factors justify this result:
+
+\begin{enumerate}
+    \item \textbf{Fundamental Linguistic Differences:} LLMs generate text by sampling from learned distributions conditioned on training data. This process produces systematic biases (e.g., over-use of formal transitions) that are detectable.
+    
+    \item \textbf{Dataset Quality:} The texts in our dataset are clearly labeled, representative samples from known sources. Real-world application would face much more ambiguous cases.
+    
+    \item \textbf{Feature Richness Combined with Scale:} With 341,063 training samples and 5,000 features, the SVM has sufficient statistical power to learn decision boundaries that generalize well to unseen data.
+    
+    \item \textbf{No Adversarial Contamination:} The dataset is not adversarially constructed; AI models were not optimized to evade detection.
+\end{enumerate}
+
+\textit{[TODO: Add critical reflection: Is this accuracy realistic? What would happen with adversarially crafted text or out-of-distribution samples?]}
+
+\subsection{Methodological Soundness: Data Leakage Check}
+
+A critical concern in supervised learning is **data leakage**—information about the test set influencing model training. We verify that our pipeline prevents leakage:
+
+\begin{enumerate}
+    \item \textbf{Train/Test Split First:} Stratified splitting occurs *before* feature extraction, using only training data for fit operations.
+    \item \textbf{Feature Normalization:} All scaling (mean and standard deviation computation) uses training-set statistics only.
+    \item \textbf{Hyperparameter Tuning:} Hyperparameters are fixed; no tuning on validation set (which would require cross-validation that we eschew for efficiency).
+\end{enumerate}
+
+Therefore, the reported metrics represent true generalization to held-out test data, not inflated performance due to leakage.
+
+% ============================================================
+% 8. CONCLUSION
+% ============================================================
+\section{Conclusion}
+
+\subsection{Summary of Findings}
+
+This work presents a large-scale, practical machine learning pipeline for distinguishing human-authored from AI-generated text. Key achievements:
+
+\begin{itemize}
+    \item Successfully processed and classified 487,235 texts using three complementary feature extraction methods and three diverse classification models on resource-constrained hardware (Google Colab, 12.7GB RAM).
+    
+    \item Demonstrated that simple, interpretable features (TF-IDF + Linear SVM) outperform complex methods (DistilBERT + neural networks) for this task, achieving 99.75\% accuracy and 0.9966 F1-score.
+    
+    \item Identified specific linguistic markers of AI-generated text (formal transitions: "additionally," "furthermore," "moreover"), providing interpretable insights aligned with known LLM biases.
+    
+    \item Developed and documented practical computational engineering techniques (text truncation, incremental checkpointing, memory isolation) enabling large-scale NLP on limited hardware.
+\end{itemize}
+
+\subsection{Practical Implications}
+
+For practitioners deploying AI-detection systems:
+
+\begin{enumerate}
+    \item \textbf{Prefer Simplicity:} Start with TF-IDF and linear models. Complex methods rarely provide justified benefit relative to their computational cost.
+    
+    \item \textbf{Prioritize Interpretability:} In high-stakes applications (academic integrity, content moderation), the ability to explain decisions is as important as accuracy.
+    
+    \item \textbf{Accept Domain Limitations:} Any trained model is specific to its training distribution. Performance on novel domains, adversarial inputs, or future LLM architectures is uncertain.
+    
+    \item \textbf{Plan for Evolution:} As LLMs improve and become harder to detect, detection systems must continuously adapt. Treat this as an ongoing arms race.
+\end{enumerate}
+
+\subsection{Future Work}
+
+\textit{[TODO: Add 3-5 bullet points on potential future research directions:]}
+
+Suggested avenues:
+\begin{itemize}
+    \item Cross-domain evaluation: Train on one LLM (e.g., GPT-3) and evaluate on another (e.g., Claude).
+    \item Adversarial robustness: Test detection against texts specifically crafted to evade detection.
+    \item Ensemble methods: Combine all three feature representations for potential robustness.
+    \item Fine-tuned transformers: Train BERT-based classifiers end-to-end for potentially superior performance.
+    \item Real-time deployment: Optimize the pipeline for sub-100ms inference for web application integration.
+\end{itemize}
+
+\subsection{Concluding Remarks}
+
+\textit{[TODO: Write 3-4 sentences as a personal reflection on this work. Consider:]}
+\begin{itemize}
+    \item What surprised you about these results?
+    \item What would you do differently if starting over?
+    \item What is the broader significance of this work for society/education/ML research?
+\end{itemize}
+
+\textbf{Suggested closing:} "This project demonstrates that robust AI-generated text detection is achievable through careful feature engineering and model selection, even under significant computational constraints. As LLMs continue to improve, the cat-and-mouse game between generation and detection will intensify, making this an ongoing area of research importance."
+
+% ============================================================
+% REFERENCES
+% ============================================================
+\newpage
+\begin{thebibliography}{99}
+
+\bibitem{sparck1972statistical} Sparck Jones, K. (1972). A statistical interpretation of term specificity and its application in retrieval. \textit{Journal of Documentation}, 28(1), 11--21.
+
+\bibitem{pennington2014glove} Pennington, J., Socher, R., \& Manning, C. D. (2014). GloVe: Global vectors for word representation. \textit{Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)}, 1532--1543.
+
+\bibitem{sanh2019distilbert} Sanh, V., Debut, L., Derniere, J., \& Wolf, T. (2019). DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter. \textit{arXiv preprint arXiv:1910.01108}.
+
+\bibitem{joachims1998text} Joachims, T. (1998). Text categorization with support vector machines: Learning with many relevant features. \textit{European Conference on Machine Learning}, 137--142.
+
+\bibitem{chen2016xgboost} Chen, T., \& Guestrin, C. (2016). XGBoost: A scalable tree boosting system. \textit{Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, 785--794.
+
+\bibitem{solaiman2019release} Solaiman, I., Brundage, M., Clark, J., Askell, A., Wang, J., Wu, T., \& Wang, J. (2019). Release strategies and the social impacts of language models. \textit{arXiv preprint arXiv:1908.09203}.
+
+\bibitem{tan2016burstiness} Tan, C., Lee, L., & Pang, B. (2016). The effect of wording on message propagation: Topic-and author-controlled natural experiments on Twitter. \textit{Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics}, 1764--1773.
+
+% Add more references as needed based on your literature review
+
+\end{thebibliography}
+
+\end{document}

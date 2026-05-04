@@ -1,0 +1,228 @@
+# ====================================================
+# PYTHON & ENVIRONMENT
+# ====================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# C extensions
+*.o
+*.a
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# ====================================================
+# JUPYTER & NOTEBOOKS
+# ====================================================
+
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+.jupyter/
+
+# Keep only exploration.ipynb in notebooks/
+notebooks/NLPprj*.ipynb
+notebooks/main.ipynb
+notebooks/*.ipynb~
+.colab_history
+
+# ====================================================
+# IDE & EDITOR
+# ====================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ====================================================
+# OS FILES
+# ====================================================
+
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# ====================================================
+# DATA (Keep only dataset_sample.csv)
+# ====================================================
+
+data/**/*
+!data/dataset_sample.csv
+data/*.csv
+data/*.xlsx
+data/*.json
+data/*.parquet
+data/*.feather
+data/raw/
+data/processed/
+
+# ====================================================
+# MODELS & CHECKPOINTS
+# ====================================================
+
+results/models/*.pkl
+results/models/*.joblib
+results/models/*.pt
+results/models/*.pth
+results/models/*.h5
+results/models/*.json
+*.pkl
+*.joblib
+weights/
+checkpoints/
+
+# ====================================================
+# RESULTS & LOGS (Keep only organized figures/)
+# ====================================================
+
+results/**/*
+!results/figures/
+results/logs/
+results/cache/
+*.log
+results/*.txt
+
+# ====================================================
+# REPORT BUILD FILES
+# ====================================================
+
+report/*.aux
+report/*.log
+report/*.toc
+report/*.out
+report/*.pdf
+report/*.dvi
+report/*.synctex.gz
+report/._*
+
+# ====================================================
+# SENSITIVE & TEMPORARY FILES
+# ====================================================
+
+*.key
+*.pem
+secrets.txt
+.env
+.env.local
+
+# Google Colab specific
+/content/
+/content/drive/
+
+# Testing
+test_*.py
+debug/
+scratch/
+
+# ====================================================
+# COMPRESSED & ARCHIVE FILES
+# ====================================================
+
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.gz
+
+# ====================================================
+# DATABASE FILES
+# ====================================================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# ====================================================
+# COVERAGE & TESTING
+# ====================================================
+
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# ====================================================
+# MISC
+# ====================================================
+
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+*.egg
+.DS_Store
+
+# Output files
+*.log
+*.out
+results/figures/*
+!results/figures/.gitkeep
+
+# Large files
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.hdf5
+*.h5
+
+# System
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Report drafts
+report/*.docx
+report/*.xlsx
+report/old/
