@@ -1,0 +1,202 @@
+============================================================
+CLASS DISTRIBUTION
+============================================================
+
+Count:
+  Class 0 (Human): 305797 (62.8%)
+  Class 1 (AI): 181438 (37.2%)
+
+
+
+
+
+
+============================================================
+TEXT LENGTH STATISTICS
+============================================================
+
+Statistics by Class:
+          text_length                                                  \
+                count     mean      std   min     25%     50%     75%   
+generated                                                               
+0.0          305797.0  2354.59  1082.01  82.0  1543.0  2156.0  2920.0   
+1.0          181438.0  2126.32   787.25   1.0  1654.0  2048.0  2480.0   
+
+                   token_count          ...                word_count          \
+               max       count    mean  ...    75%     max      count    mean   
+generated                               ...                                     
+0.0        18322.0    305797.0  468.88  ...  579.0  1788.0   305797.0  421.99   
+1.0         8871.0    181438.0  389.76  ...  454.0  1389.0   181438.0  344.41   
+
+                                                      
+              std   min    25%    50%    75%     max  
+generated                                             
+0.0        186.87  14.0  281.0  389.0  520.0  1668.0  
+1.0        117.03   0.0  274.0  337.0  403.0  1238.0 
+
+
+
+
+
+
+============================================================
+FEATURE METHOD 1: TF-IDF (Full Dataset)
+============================================================
+
+Fitting TF-IDF on 341,063 training texts...
+Transforming validation and test data...
+
+TF-IDF Results:
+  Train: (341063, 5000)
+  Val:   (73086, 5000)
+  Test:  (73086, 5000)
+  Sparsity: 96.7%
+  Memory: 226.5 MB
+
+✅ TF-IDF extraction complete!
+
+
+
+
+============================================================
+FEATURE METHOD 2: GLOVE EMBEDDINGS (Full Dataset)
+============================================================
+
+Loading GloVe embeddings (300-dim)...
+✅ Loaded (vector size: 300)
+
+Extracting embeddings for train set (341,063 texts)...
+Train: 100%|██████████| 341063/341063 [03:14<00:00, 1755.71it/s]
+Extracting embeddings for val set (73,086 texts)...
+Val: 100%|██████████| 73086/73086 [00:41<00:00, 1751.03it/s]
+Extracting embeddings for test set (73,086 texts)...
+Test: 100%|██████████| 73086/73086 [00:41<00:00, 1757.53it/s]
+GloVe Results:
+  Train: (341063, 300)
+  Val:   (73086, 300)
+  Test:  (73086, 300)
+  Memory: 818.6 MB
+
+✅ GloVe extraction complete!
+
+0
+
+
+
+
+
+
+============================================================
+FEATURE METHOD 3: DISTILBERT (Batch Extraction)
+============================================================
+
+Device: cuda
+Loading DistilBERT tokenizer and model...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%
+ 100/100 [00:00<00:00, 215.59it/s, Materializing param=transformer.layer.5.sa_layer_norm.weight]
+DistilBertModel LOAD REPORT from: distilbert-base-uncased
+Key                     | Status     |  | 
+------------------------+------------+--+-
+vocab_transform.weight  | UNEXPECTED |  | 
+vocab_layer_norm.bias   | UNEXPECTED |  | 
+vocab_transform.bias    | UNEXPECTED |  | 
+vocab_layer_norm.weight | UNEXPECTED |  | 
+vocab_projector.bias    | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+✅ Model loaded
+
+1. Train set (341,063 texts)...
+Batches: 100%|██████████| 1333/1333 [26:23<00:00,  1.19s/it]
+   Shape: (341063, 768)
+2. Val set (73,086 texts)...
+Batches: 100%|██████████| 286/286 [05:41<00:00,  1.20s/it]
+   Shape: (73086, 768)
+3. Test set (73,086 texts)...
+Batches: 100%|██████████| 286/286 [05:40<00:00,  1.19s/it]
+   Shape: (73086, 768)
+
+DistilBERT Results:
+  Total memory: 1.50 GB
+
+✅ DistilBERT extraction complete!
+0
+
+
+
+
+
+============================================================
+MODEL 1: LINEAR SVM (via SGD - Zero Memory Overhead)
+============================================================
+Training SGD SVM (Streaming rows to save RAM)...
+
+Results:
+  Accuracy:  0.9975
+  Precision: 0.9974
+  Recall:    0.9957
+  F1-Score:  0.9966
+  AUC-ROC:   0.9999
+
+
+
+
+
+============================================================
+MODEL 2: XGBOOST (GLOVE EMBEDDINGS)
+============================================================
+Training...
+
+Results:
+  Accuracy:  0.9691
+  Precision: 0.9741
+  Recall:    0.9422
+  F1-Score:  0.9579
+  AUC-ROC:   0.9957
+
+
+
+
+
+
+============================================================
+MODEL 3: NEURAL NETWORK (DISTILBERT)
+============================================================
+Training neural network...
+  Epoch 1/5, Loss: 0.0787
+  Epoch 2/5, Loss: 0.0467
+  Epoch 3/5, Loss: 0.0380
+  Epoch 4/5, Loss: 0.0329
+  Epoch 5/5, Loss: 0.0288
+
+Results:
+  Accuracy:  0.9916
+  Precision: 0.9939
+  Recall:    0.9834
+  F1-Score:  0.9886
+  AUC-ROC:   0.9996
+
+
+
+
+
+
+======================================================================
+FINAL COMPARISON: ALL 3 MODELS
+======================================================================
+
+                 Model Feature Set  Accuracy  Precision   Recall  F1-Score  AUC-ROC
+Support Vector Machine      TF-IDF  0.997455   0.997424 0.995738  0.996580 0.999894
+               XGBoost       GloVe  0.969132   0.974056 0.942203  0.957865 0.995717
+        Neural Network  DistilBERT  0.991585   0.993947 0.983392  0.988641 0.999608
+
+🏆 Best Overall Model (F1): Support Vector Machine
+   F1-Score: 0.9966
+
+
+
+
+ 
