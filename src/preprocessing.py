@@ -1,242 +1,141 @@
 """
-Data preprocessing module for NLP text classification.
-Handles tokenization, lowercasing, punctuation removal, stopword removal, and lemmatization.
+Text preprocessing module for AI-Generated Text Detection project.
+Handles text truncation, cleaning, and preparation for feature extraction.
 """
 
-import re
-import string
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-# Download NLTK data (run once)
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
 
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
-
-try:
-    nltk.data.find('corpora/wordnet')
-except LookupError:
-    nltk.download('wordnet')
-
-
-class TextPreprocessor:
-    """Text preprocessing pipeline."""
-    
-    def __init__(self, lowercase=True, remove_punctuation=True, 
-                 remove_stopwords=True, lemmatize=False):
-        """
-        Initialize preprocessor.
-        
-        Args:
-            lowercase: Whether to lowercase text
-            remove_punctuation: Whether to remove punctuation
-            remove_stopwords: Whether to remove stopwords
-            lemmatize: Whether to apply lemmatization
-        """
-        self.lowercase = lowercase
-        self.remove_punctuation = remove_punctuation
-        self.remove_stopwords = remove_stopwords
-        self.lemmatize = lemmatize
-        self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english'))
-    
-    def preprocess(self, text):
-        """
-        Apply preprocessing steps to text.
-        
-        Args:
-            text: Raw text string
-            
-        Returns:
-            Preprocessed text string
-        """
-        # Step 1: Lowercase
-        if self.lowercase:
-            text = text.lower()
-        
-        # Step 2: Remove punctuation
-        if self.remove_punctuation:
-            text = text.translate(str.maketrans('', '', string.punctuation))
-        
-        # Step 3: Remove extra whitespace
-        text = ' '.join(text.split())
-        
-        # Step 4: Tokenize
-        tokens = word_tokenize(text)
-        
-        # Step 5: Remove stopwords
-        if self.remove_stopwords:
-            tokens = [token for token in tokens if token not in self.stop_words]
-        
-        # Step 6: Lemmatization
-        if self.lemmatize:
-            tokens = [self.lemmatizer.lemmatize(token) for token in tokens]
-        
-        # Rejoin tokens
-        preprocessed_text = ' '.join(tokens)
-        
-        return preprocessed_text
-    
-    def preprocess_batch(self, texts):
-        """
-        Preprocess a batch of texts.
-        
-        Args:
-            texts: List of text strings
-            
-        Returns:
-            List of preprocessed texts
-        """
-        return [self.preprocess(text) for text in texts]
-
-
-def extract_text_features(text):
+def truncate_text(text, max_words=256):
     """
-    Extract lexical features from text.
+    Truncate text to max_words efficiently.
     
     Args:
-        text: Text string
-        
+        text: Input text string
+        max_words: Maximum number of words to keep (default: 256)
+    
     Returns:
-        Dict of features
+        Truncated text string
     """
-    tokens = word_tokenize(text.lower())
-    
-    # Basic statistics
-    num_tokens = len(tokens)
-    num_unique_tokens = len(set(tokens))
-    avg_token_length = np.mean([len(t) for t in tokens]) if tokens else 0
-    
-    # Punctuation ratio (count punctuation in original text)
-    num_punctuation = sum(1 for c in text if c in string.punctuation)
-    punctuation_ratio = num_punctuation / len(text) if len(text) > 0 else 0
-    
-    # Digit ratio
-    num_digits = sum(1 for c in text if c.isdigit())
-    digit_ratio = num_digits / len(text) if len(text) > 0 else 0
-    
-    # Uppercase ratio
-    num_uppercase = sum(1 for c in text if c.isupper())
-    uppercase_ratio = num_uppercase / len(text) if len(text) > 0 else 0
-    
-    return {
-        'num_tokens': num_tokens,
-        'num_unique_tokens': num_unique_tokens,
-        'avg_token_length': avg_token_length,
-        'punctuation_ratio': punctuation_ratio,
-        'digit_ratio': digit_ratio,
-        'uppercase_ratio': uppercase_ratio,
-        'type_token_ratio': num_unique_tokens / num_tokens if num_tokens > 0 else 0
-    }
+    if isinstance(text, str):
+        words = text.split(None, max_words)
+        return ' '.join(words[:max_words])
+    return ""
 
 
-def load_and_preprocess_data(data_path, text_column='text', label_column='label',
-                             preprocessing_config=None, test_size=0.15, val_size=0.15, 
-                             random_state=42):
+def load_and_preprocess_dataset(dataset_path, text_column=None, label_column=None, max_words=256):
     """
-    Load dataset and apply preprocessing with stratified split.
+    Load dataset and perform initial preprocessing.
     
     Args:
-        data_path: Path to CSV dataset
-        text_column: Column name for text
-        label_column: Column name for labels (assumed to be 0=human, 1=AI)
-        preprocessing_config: Dict with preprocessing parameters
-        test_size: Fraction of data for test set
-        val_size: Fraction of remaining data for validation
-        random_state: Random seed
-        
+        dataset_path: Path to CSV file with texts and labels
+        text_column: Name of text column (auto-detected if None)
+        label_column: Name of label column (auto-detected if None)
+        max_words: Maximum words per document (default: 256)
+    
     Returns:
-        Dict with train/val/test splits
+        df: Preprocessed DataFrame
+        TEXT_COLUMN: Name of text column
+        LABEL_COLUMN: Name of label column
     """
-    # Load data
-    df = pd.read_csv(data_path)
+    print(f"Loading dataset from: {dataset_path}\n")
     
-    # Initialize preprocessor
-    if preprocessing_config is None:
-        preprocessing_config = {
-            'lowercase': True,
-            'remove_punctuation': True,
-            'remove_stopwords': True,
-            'lemmatize': False
-        }
+    df = pd.read_csv(dataset_path)
+    print(f"✅ Dataset loaded: {len(df):,} texts")
+    print(f"\nDataset info:")
+    print(f"  Columns: {list(df.columns)}")
+    print(f"  Rows: {len(df):,}")
+    print(f"  Data types:\n{df.dtypes}")
     
-    preprocessor = TextPreprocessor(**preprocessing_config)
+    # Auto-detect columns if not provided
+    if text_column is None:
+        for col in ['text', 'text_preprocessed', 'content']:
+            if col in df.columns:
+                text_column = col
+                break
     
-    # Preprocess texts
-    print("Preprocessing texts...")
-    df['text_preprocessed'] = df[text_column].apply(preprocessor.preprocess)
+    if label_column is None:
+        for col in ['generated', 'label', 'target']:
+            if col in df.columns:
+                label_column = col
+                break
     
-    # Extract lexical features
-    print("Extracting lexical features...")
-    df['num_tokens'] = df[text_column].apply(lambda x: len(word_tokenize(x)))
-    df['avg_token_length'] = df[text_column].apply(
-        lambda x: np.mean([len(t) for t in word_tokenize(x)]) if word_tokenize(x) else 0
-    )
-    df['punctuation_ratio'] = df[text_column].apply(
-        lambda x: sum(1 for c in x if c in string.punctuation) / len(x) if len(x) > 0 else 0
-    )
+    if text_column is None or label_column is None:
+        raise ValueError("Could not auto-detect TEXT_COLUMN and LABEL_COLUMN")
     
-    # Stratified split: train -> split into train/val
-    X = df[['text', 'text_preprocessed']].values
-    y = df[label_column].values
+    print(f"\n✅ Auto-detected columns:")
+    print(f"  TEXT_COLUMN: '{text_column}'")
+    print(f"  LABEL_COLUMN: '{label_column}'")
     
-    # First split: train+val vs test
+    # Truncate texts
+    print(f"\n{'='*60}")
+    print("STEP 1: MEMORY-OPTIMIZED TEXT TRUNCATION")
+    print(f"{'='*60}\n")
+    
+    print(f"Truncating {len(df):,} rows to {max_words} words...")
+    df['text_truncated'] = df[text_column].apply(lambda x: truncate_text(x, max_words))
+    
+    print("Dropping original text column to recover RAM...")
+    df.drop(columns=[text_column], inplace=True)
+    
+    import gc
+    gc.collect()
+    
+    print(f"\nCalculating statistics...")
+    df['word_count'] = df['text_truncated'].apply(lambda x: x.count(' ') + 1)
+    print(df['word_count'].describe())
+    
+    print(f"\n✅ Truncation complete!")
+    
+    print(f"\nClass distribution:")
+    print(df[label_column].value_counts())
+    print(f"Proportions: {(df[label_column].value_counts() / len(df)).round(3).to_dict()}")
+    
+    return df, 'text_truncated', label_column
+
+
+def train_val_test_split(X, y, train_size=0.70, val_size=0.15, test_size=0.15, random_state=42):
+    """
+    Split data into train/val/test with stratification.
+    
+    Args:
+        X: Features (text or array)
+        y: Labels
+        train_size: Proportion for training (default: 0.70)
+        val_size: Proportion for validation (default: 0.15)
+        test_size: Proportion for testing (default: 0.15)
+        random_state: Random seed (default: 42)
+    
+    Returns:
+        Tuple of (X_train, X_val, X_test, y_train, y_val, y_test)
+    """
+    print(f"\n{'='*60}")
+    print("STEP 2: TRAIN/VAL/TEST SPLIT (70/15/15)")
+    print(f"{'='*60}\n")
+    
+    # Split 1: 70% train, 30% temp
     X_temp, X_test, y_temp, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
     
-    # Second split: train vs val (from remaining data)
-    val_size_adjusted = val_size / (1 - test_size)
+    # Split 2: Split temp into train/val
+    val_ratio = val_size / (1 - test_size)
     X_train, X_val, y_train, y_val = train_test_split(
-        X_temp, y_temp, test_size=val_size_adjusted, random_state=random_state, stratify=y_temp
+        X_temp, y_temp, test_size=val_ratio, random_state=random_state, stratify=y_temp
     )
     
-    # Reconstruct texts and preprocessed texts
-    def split_texts(X_split):
-        texts = [x[0] for x in X_split]
-        texts_preprocessed = [x[1] for x in X_split]
-        return texts, texts_preprocessed
+    print(f"Full dataset split:")
+    print(f"  Train: {len(X_train):>8,} samples ({len(X_train)/(len(X_train)+len(X_val)+len(X_test))*100:>5.1f}%)")
+    print(f"  Val:   {len(X_val):>8,} samples ({len(X_val)/(len(X_train)+len(X_val)+len(X_test))*100:>5.1f}%)")
+    print(f"  Test:  {len(X_test):>8,} samples ({len(X_test)/(len(X_train)+len(X_val)+len(X_test))*100:>5.1f}%)")
+    print(f"  Total: {len(X_train)+len(X_val)+len(X_test):>8,} samples")
     
-    train_texts, train_texts_preprocessed = split_texts(X_train)
-    val_texts, val_texts_preprocessed = split_texts(X_val)
-    test_texts, test_texts_preprocessed = split_texts(X_test)
+    print(f"\nClass distribution verification:")
+    for split_name, y_split in [('Train', y_train), ('Val', y_val), ('Test', y_test)]:
+        unique, counts = np.unique(y_split, return_counts=True)
+        props = counts / len(y_split)
+        print(f"  {split_name}: {props[0]:>5.1%} Human, {props[1]:>5.1%} AI")
     
-    print(f"\nDataset Split:")
-    print(f"  Train: {len(train_texts)} samples")
-    print(f"  Validation: {len(val_texts)} samples")
-    print(f"  Test: {len(test_texts)} samples")
-    print(f"\nClass Distribution (Train):")
-    print(f"  Human: {(y_train == 0).sum()} ({100 * (y_train == 0).sum() / len(y_train):.1f}%)")
-    print(f"  AI: {(y_train == 1).sum()} ({100 * (y_train == 1).sum() / len(y_train):.1f}%)")
-    
-    return {
-        'train': {
-            'texts': train_texts,
-            'texts_preprocessed': train_texts_preprocessed,
-            'labels': y_train
-        },
-        'val': {
-            'texts': val_texts,
-            'texts_preprocessed': val_texts_preprocessed,
-            'labels': y_val
-        },
-        'test': {
-            'texts': test_texts,
-            'texts_preprocessed': test_texts_preprocessed,
-            'labels': y_test
-        },
-        'preprocessor': preprocessor
-    }
-
-
-import numpy as np
+    return X_train, X_val, X_test, y_train, y_val, y_test

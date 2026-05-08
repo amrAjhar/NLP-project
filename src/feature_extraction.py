@@ -1,243 +1,292 @@
 """
-Feature extraction module for converting text to numerical representations.
-Implements TF-IDF, word embeddings (Word2Vec/GloVe), and transformer embeddings (BERT).
+Feature extraction module for AI-Generated Text Detection project.
+Implements three feature extraction methods: TF-IDF, GloVe, and DistilBERT.
 """
 
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-import gensim.downloader as api
-from tqdm import tqdm
 import torch
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import StandardScaler
 from transformers import AutoTokenizer, AutoModel
-import joblib
+from tqdm import tqdm
+import gensim.downloader as api
+import scipy.sparse as sp
+from sklearn.preprocessing import StandardScaler
+import gc
 
 
 class TFIDFFeatureExtractor:
-    """TF-IDF feature extraction."""
+    """
+    Extract TF-IDF features from text documents.
+    """
     
-    def __init__(self, max_features=5000, ngram_range=(1, 2)):
+    def __init__(self, max_features=5000, ngram_range=(1, 2), min_df=5, max_df=0.90):
         """
         Initialize TF-IDF vectorizer.
         
         Args:
-            max_features: Maximum number of features
-            ngram_range: N-gram range (1, 2) = unigrams + bigrams
+            max_features: Maximum number of features (default: 5000)
+            ngram_range: N-gram range (default: (1, 2))
+            min_df: Minimum document frequency (default: 5)
+            max_df: Maximum document frequency (default: 0.90)
         """
         self.vectorizer = TfidfVectorizer(
             max_features=max_features,
             ngram_range=ngram_range,
-            stop_words='english',
-            min_df=2,
-            max_df=0.95
+            min_df=min_df,
+            max_df=max_df,
+            dtype=np.float32
         )
+        self.scaler = StandardScaler(with_mean=False)
         self.fitted = False
     
-    def fit(self, texts):
+    def fit_transform(self, X_train):
         """
-        Fit TF-IDF vectorizer on training texts.
+        Fit vectorizer on training data and transform.
         
         Args:
-            texts: List of text strings
-        """
-        self.vectorizer.fit(texts)
-        self.fitted = True
-    
-    def transform(self, texts):
-        """
-        Transform texts to TF-IDF features.
+            X_train: Training texts
         
-        Args:
-            texts: List of text strings
-            
         Returns:
-            Sparse matrix of shape (n_texts, n_features)
+            Scaled sparse matrix
+        """
+        print(f"\n{'='*60}")
+        print("FEATURE METHOD 1: TF-IDF (Full Dataset)")
+        print(f"{'='*60}\n")
+        
+        print(f"Fitting TF-IDF on {len(X_train):,} training texts...")
+        X_train_tfidf = self.vectorizer.fit_transform(X_train.astype(str))
+        
+        print("Scaling TF-IDF matrix...")
+        X_train_tfidf_scaled = self.scaler.fit_transform(X_train_tfidf)
+        
+        self.fitted = True
+        
+        print(f"\nTF-IDF Results:")
+        print(f"  Train: {X_train_tfidf_scaled.shape}")
+        sparsity = 1 - X_train_tfidf_scaled.nnz / (X_train_tfidf_scaled.shape[0] * X_train_tfidf_scaled.shape[1])
+        print(f"  Sparsity: {sparsity:.1%}")
+        print(f"  Memory: {X_train_tfidf_scaled.data.nbytes / 1e6:.1f} MB")
+        print(f"\n✅ TF-IDF extraction complete!")
+        
+        return X_train_tfidf_scaled
+    
+    def transform(self, X):
+        """
+        Transform new data using fitted vectorizer.
+        
+        Args:
+            X: Text data to transform
+        
+        Returns:
+            Scaled sparse matrix
         """
         if not self.fitted:
-            raise ValueError("Vectorizer not fitted. Call fit() first.")
-        return self.vectorizer.transform(texts)
+            raise ValueError("Vectorizer not fitted yet")
+        X_tfidf = self.vectorizer.transform(X.astype(str))
+        return self.scaler.transform(X_tfidf)
+
+
+class GloVeFeatureExtractor:
+    """
+    Extract GloVe embeddings from text documents.
+    """
     
-    def fit_transform(self, texts):
-        """Fit and transform in one step."""
-        self.fit(texts)
-        return self.transform(texts)
+    def __init__(self, embedding_model=None):
+        """
+        Initialize GloVe embeddings.
+        
+        Args:
+            embedding_model: Pre-loaded GloVe model (loads if None)
+        """
+        print(f"\n{'='*60}")
+        print("FEATURE METHOD 2: GLOVE EMBEDDINGS (Full Dataset)")
+        print(f"{'='*60}\n")
+        
+        if embedding_model is None:
+            print("Loading GloVe embeddings (300-dim)...")
+            self.embedding_model = api.load('glove-wiki-gigaword-300')
+            print(f"✅ Loaded (vector size: {self.embedding_model.vector_size})")
+        else:
+            self.embedding_model = embedding_model
+        
+        self.scaler = StandardScaler()
+        self.fitted = False
     
-    def get_feature_names(self):
-        """Get feature names (vocabulary)."""
-        return self.vectorizer.get_feature_names_out()
+    def _get_embedding_vector(self, text, aggregation='mean'):
+        """
+        Get embedding vector for a single text.
+        
+        Args:
+            text: Input text
+            aggregation: Aggregation method (default: 'mean')
+        
+        Returns:
+            Embedding vector
+        """
+        words = text.split()
+        embeddings = []
+        for word in words:
+            if word in self.embedding_model:
+                embeddings.append(self.embedding_model[word])
+        
+        if embeddings:
+            if aggregation == 'mean':
+                return np.mean(embeddings, axis=0)
+        return np.zeros(self.embedding_model.vector_size)
     
-    def save(self, path):
-        """Save vectorizer to disk."""
-        joblib.dump(self.vectorizer, path)
-    
-    def load(self, path):
-        """Load vectorizer from disk."""
-        self.vectorizer = joblib.load(path)
+    def fit_transform(self, X_train):
+        """
+        Extract GloVe embeddings for training data.
+        
+        Args:
+            X_train: Training texts
+        
+        Returns:
+            Scaled embeddings
+        """
+        print(f"Extracting embeddings for train set ({len(X_train):,} texts)...")
+        X_train_glove = np.array([
+            self._get_embedding_vector(text)
+            for text in tqdm(X_train, desc="Train")
+        ])
+        
+        print("Scaling GloVe embeddings...")
+        X_train_glove_scaled = self.scaler.fit_transform(X_train_glove)
+        
         self.fitted = True
-
-
-class WordEmbeddingExtractor:
-    """Word embedding feature extraction (Word2Vec, GloVe, FastText)."""
+        
+        print(f"\nGloVe Results:")
+        print(f"  Train: {X_train_glove_scaled.shape}")
+        print(f"  Memory: {X_train_glove_scaled.nbytes / 1e6:.1f} MB")
+        print(f"\n✅ GloVe extraction complete!")
+        gc.collect()
+        
+        return X_train_glove_scaled
     
-    def __init__(self, embedding_model='glove-wiki-300', aggregation='mean'):
+    def transform(self, X):
         """
-        Initialize word embedding extractor.
+        Extract GloVe embeddings for new data.
         
         Args:
-            embedding_model: Embedding model name (e.g., 'glove-wiki-300', 'word2vec-google-news-300')
-            aggregation: Aggregation method ('mean', 'max', or 'sum')
-        """
-        self.embedding_model_name = embedding_model
-        self.aggregation = aggregation
-        print(f"Loading {embedding_model}...")
-        self.model = api.load(embedding_model)
-        self.embedding_dim = self.model.vector_size
-        print(f"Embedding dimension: {self.embedding_dim}")
-    
-    def _aggregate_embeddings(self, embeddings):
-        """
-        Aggregate word embeddings to text embedding.
+            X: Text data to transform
         
-        Args:
-            embeddings: Array of shape (n_words, embedding_dim)
-            
         Returns:
-            Array of shape (embedding_dim,)
+            Scaled embeddings
         """
-        if len(embeddings) == 0:
-            return np.zeros(self.embedding_dim)
+        if not self.fitted:
+            raise ValueError("Extractor not fitted yet")
         
-        if self.aggregation == 'mean':
-            return np.mean(embeddings, axis=0)
-        elif self.aggregation == 'max':
-            return np.max(embeddings, axis=0)
-        elif self.aggregation == 'sum':
-            return np.sum(embeddings, axis=0)
-        else:
-            raise ValueError(f"Unknown aggregation: {self.aggregation}")
-    
-    def extract_features(self, texts):
-        """
-        Extract word embedding features for texts.
-        
-        Args:
-            texts: List of text strings
-            
-        Returns:
-            Array of shape (n_texts, embedding_dim)
-        """
-        features = []
-        
-        for text in tqdm(texts, desc="Extracting word embeddings"):
-            words = text.split()
-            embeddings = []
-            
-            for word in words:
-                if word in self.model:
-                    embeddings.append(self.model[word])
-            
-            if embeddings:
-                text_embedding = self._aggregate_embeddings(np.array(embeddings))
-            else:
-                text_embedding = np.zeros(self.embedding_dim)
-            
-            features.append(text_embedding)
-        
-        return np.array(features)
+        X_glove = np.array([
+            self._get_embedding_vector(text)
+            for text in X
+        ])
+        return self.scaler.transform(X_glove)
 
 
-class TransformerEmbeddingExtractor:
-    """Transformer-based feature extraction (BERT, RoBERTa, etc.)."""
+class DistilBERTFeatureExtractor:
+    """
+    Extract DistilBERT embeddings from text documents.
+    """
     
-    def __init__(self, model_name='bert-base-uncased', device=None):
+    def __init__(self, model_name='distilbert-base-uncased', batch_size=256, max_length=128):
         """
-        Initialize transformer embedding extractor.
+        Initialize DistilBERT model.
         
         Args:
-            model_name: HuggingFace model name (e.g., 'bert-base-uncased', 'roberta-base')
-            device: Torch device ('cuda', 'cpu', or None for auto-detection)
+            model_name: HuggingFace model name (default: 'distilbert-base-uncased')
+            batch_size: Batch size for processing (default: 256)
+            max_length: Maximum sequence length (default: 128)
         """
-        self.model_name = model_name
+        print(f"\n{'='*60}")
+        print("FEATURE METHOD 3: DISTILBERT (Batch Extraction)")
+        print(f"{'='*60}\n")
         
-        # Auto-detect device
-        if device is None:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        else:
-            self.device = torch.device(device)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Device: {self.device}")
         
-        print(f"Loading {model_name} on {self.device}...")
+        print(f"Loading {model_name} tokenizer and model...")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(self.device)
-        self.model.eval()  # Set to evaluation mode
+        self.model.eval()
+        print("✅ Model loaded")
         
-        # Get embedding dimension
-        config = self.model.config
-        self.embedding_dim = config.hidden_size
-        print(f"Embedding dimension: {self.embedding_dim}")
+        self.batch_size = batch_size
+        self.max_length = max_length
+        self.scaler = StandardScaler()
+        self.fitted = False
     
-    def extract_features(self, texts, batch_size=32, max_length=512):
+    def fit_transform(self, X_train):
         """
-        Extract transformer embeddings for texts.
+        Extract DistilBERT embeddings for training data.
         
         Args:
-            texts: List of text strings
-            batch_size: Batch size for processing
-            max_length: Maximum token sequence length
-            
+            X_train: Training texts
+        
         Returns:
-            Array of shape (n_texts, embedding_dim)
+            Scaled embeddings
         """
-        features = []
+        print(f"\n1. Train set ({len(X_train):,} texts)...")
+        X_train_bert = self._extract_batch(X_train)
+        
+        print("Scaling DistilBERT embeddings...")
+        X_train_bert_scaled = self.scaler.fit_transform(X_train_bert)
+        
+        self.fitted = True
+        
+        print(f"\nDistilBERT Results:")
+        print(f"  Train: {X_train_bert_scaled.shape}")
+        print(f"  Memory: {X_train_bert_scaled.nbytes / 1e9:.2f} GB")
+        print(f"\n✅ DistilBERT extraction complete!")
+        
+        del self.model
+        gc.collect()
+        
+        return X_train_bert_scaled
+    
+    def _extract_batch(self, texts):
+        """
+        Extract embeddings in batches.
+        
+        Args:
+            texts: List of texts
+        
+        Returns:
+            Embeddings array
+        """
+        embeddings = []
+        total_batches = (len(texts) + self.batch_size - 1) // self.batch_size
         
         with torch.no_grad():
-            for i in tqdm(range(0, len(texts), batch_size), desc="Extracting transformer embeddings"):
-                batch = texts[i:i + batch_size]
+            for i in tqdm(range(0, len(texts), self.batch_size), desc="Batches", total=total_batches):
+                batch = list(texts[i:min(i+self.batch_size, len(texts))])
                 
-                # Tokenize and encode
                 encoded = self.tokenizer(
                     batch,
-                    max_length=max_length,
+                    max_length=self.max_length,
                     padding=True,
                     truncation=True,
                     return_tensors='pt'
                 ).to(self.device)
                 
-                # Forward pass
                 outputs = self.model(**encoded)
-                
-                # Extract [CLS] token embeddings
-                cls_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-                
-                features.extend(cls_embeddings)
+                cls_embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+                embeddings.extend(cls_embedding)
         
-        return np.array(features)
-
-
-class CombinedFeatureExtractor:
-    """Combine multiple feature extraction methods."""
+        return np.array(embeddings)
     
-    def __init__(self, extractors_dict):
+    def transform(self, X):
         """
-        Initialize combined extractor.
+        Extract DistilBERT embeddings for new data.
         
         Args:
-            extractors_dict: Dict of {feature_name: extractor_instance}
-        """
-        self.extractors = extractors_dict
-    
-    def extract_features(self, texts):
-        """
-        Extract all features.
+            X: Text data to transform
         
-        Args:
-            texts: List of text strings
-            
         Returns:
-            Dict of {feature_name: feature_array}
+            Scaled embeddings
         """
-        features = {}
+        if not self.fitted:
+            raise ValueError("Extractor not fitted yet")
         
-        for name, extractor in self.extractors.items():
-            print(f"\nExtracting {name} features...")
-            features[name] = extractor.extract_features(texts)
-        
-        return features
+        X_bert = self._extract_batch(X)
+        return self.scaler.transform(X_bert)

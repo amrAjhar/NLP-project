@@ -1,400 +1,355 @@
 """
-Model training module for AI-Generated Text Detection.
-Implements training loops for Logistic Regression, SVM, BERT, and Ensemble models.
+Model training module for AI-Generated Text Detection project.
+Implements three classification models: Linear SVM, XGBoost, and Neural Network.
 """
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-from torch.optim import AdamW
-from transformers import AutoTokenizer, AutoModel
+from sklearn.linear_model import SGDClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from tqdm import tqdm
-import joblib
-from datetime import datetime
+import xgboost as xgb
 
 
-class LogisticRegressionTrainer:
-    """Logistic Regression model trainer."""
+class LinearSVMTrainer:
+    """
+    Train a linear SVM using SGDClassifier (more efficient than RBF kernel).
+    Loss='hinge' makes SGDClassifier mathematically equivalent to Linear SVM.
+    """
     
-    def __init__(self, max_iter=1000, random_state=42):
+    def __init__(self, alpha=1e-4, random_state=42, max_iter=1000, n_jobs=-1):
         """
-        Initialize Logistic Regression.
+        Initialize SVM trainer.
         
         Args:
-            max_iter: Maximum iterations
-            random_state: Random seed
+            alpha: Regularization parameter (default: 1e-4)
+            random_state: Random seed (default: 42)
+            max_iter: Maximum iterations (default: 1000)
+            n_jobs: Number of jobs for parallelization (default: -1, all cores)
         """
-        self.model = LogisticRegression(max_iter=max_iter, random_state=random_state, n_jobs=-1)
-        self.scaler = StandardScaler()
+        self.model = SGDClassifier(
+            loss='hinge',
+            penalty='l2',
+            alpha=alpha,
+            random_state=random_state,
+            max_iter=max_iter,
+            tol=1e-3,
+            n_jobs=n_jobs
+        )
     
-    def train(self, X_train, y_train, X_val=None, y_val=None):
+    def train(self, X_train, y_train):
         """
-        Train Logistic Regression.
-        
-        Args:
-            X_train: Training features (dense array or sparse matrix)
-            y_train: Training labels
-            X_val: Validation features (optional)
-            y_val: Validation labels (optional)
-            
-        Returns:
-            Dict with training info
-        """
-        print("Training Logistic Regression...")
-        
-        # Convert sparse to dense if needed
-        if hasattr(X_train, 'toarray'):
-            X_train = X_train.toarray()
-        
-        # Scale features
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        
-        # Train
-        self.model.fit(X_train_scaled, y_train)
-        
-        # Evaluate on validation set if provided
-        train_score = self.model.score(X_train_scaled, y_train)
-        val_score = None
-        
-        if X_val is not None and y_val is not None:
-            if hasattr(X_val, 'toarray'):
-                X_val = X_val.toarray()
-            X_val_scaled = self.scaler.transform(X_val)
-            val_score = self.model.score(X_val_scaled, y_val)
-        
-        print(f"Training accuracy: {train_score:.4f}")
-        if val_score:
-            print(f"Validation accuracy: {val_score:.4f}")
-        
-        return {'train_score': train_score, 'val_score': val_score}
-    
-    def predict(self, X):
-        """Make predictions."""
-        if hasattr(X, 'toarray'):
-            X = X.toarray()
-        X_scaled = self.scaler.transform(X)
-        return self.model.predict(X_scaled)
-    
-    def predict_proba(self, X):
-        """Get prediction probabilities."""
-        if hasattr(X, 'toarray'):
-            X = X.toarray()
-        X_scaled = self.scaler.transform(X)
-        return self.model.predict_proba(X_scaled)
-    
-    def save(self, path):
-        """Save model."""
-        joblib.dump({'model': self.model, 'scaler': self.scaler}, path)
-    
-    def load(self, path):
-        """Load model."""
-        data = joblib.load(path)
-        self.model = data['model']
-        self.scaler = data['scaler']
-
-
-class SVMTrainer:
-    """SVM model trainer."""
-    
-    def __init__(self, kernel='rbf', C=1.0, gamma='scale', random_state=42):
-        """
-        Initialize SVM.
-        
-        Args:
-            kernel: Kernel type ('rbf', 'linear', 'poly')
-            C: Regularization parameter
-            gamma: Kernel coefficient
-            random_state: Random seed
-        """
-        self.model = SVC(kernel=kernel, C=C, gamma=gamma, 
-                         probability=True, random_state=random_state)
-        self.scaler = StandardScaler()
-    
-    def train(self, X_train, y_train, X_val=None, y_val=None):
-        """
-        Train SVM.
+        Train the SVM model.
         
         Args:
             X_train: Training features
             y_train: Training labels
-            X_val: Validation features (optional)
-            y_val: Validation labels (optional)
-            
-        Returns:
-            Dict with training info
         """
-        print("Training SVM...")
+        print(f"\n{'='*60}")
+        print("MODEL 1: LINEAR SVM (via SGD - Zero Memory Overhead)")
+        print(f"{'='*60}\n")
         
-        # Convert sparse to dense
-        if hasattr(X_train, 'toarray'):
-            X_train = X_train.toarray()
-        
-        # Scale features
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        
-        # Train
-        self.model.fit(X_train_scaled, y_train)
-        
-        # Evaluate
-        train_score = self.model.score(X_train_scaled, y_train)
-        val_score = None
-        
-        if X_val is not None and y_val is not None:
-            if hasattr(X_val, 'toarray'):
-                X_val = X_val.toarray()
-            X_val_scaled = self.scaler.transform(X_val)
-            val_score = self.model.score(X_val_scaled, y_val)
-        
-        print(f"Training accuracy: {train_score:.4f}")
-        if val_score:
-            print(f"Validation accuracy: {val_score:.4f}")
-        
-        return {'train_score': train_score, 'val_score': val_score}
+        print("Training SGD SVM (Streaming rows to save RAM)...")
+        self.model.fit(X_train, y_train)
+        print("✅ Training complete!")
     
     def predict(self, X):
-        """Make predictions."""
-        if hasattr(X, 'toarray'):
-            X = X.toarray()
-        X_scaled = self.scaler.transform(X)
-        return self.model.predict(X_scaled)
+        """
+        Make predictions on new data.
+        
+        Args:
+            X: Features to predict on
+        
+        Returns:
+            Predicted labels
+        """
+        return self.model.predict(X)
     
     def predict_proba(self, X):
-        """Get prediction probabilities."""
-        if hasattr(X, 'toarray'):
-            X = X.toarray()
-        X_scaled = self.scaler.transform(X)
-        return self.model.predict_proba(X_scaled)
-    
-    def save(self, path):
-        """Save model."""
-        joblib.dump({'model': self.model, 'scaler': self.scaler}, path)
-    
-    def load(self, path):
-        """Load model."""
-        data = joblib.load(path)
-        self.model = data['model']
-        self.scaler = data['scaler']
-
-
-class BERTClassifier(nn.Module):
-    """BERT-based text classification model."""
-    
-    def __init__(self, model_name='bert-base-uncased', num_classes=2, dropout=0.1):
         """
-        Initialize BERT classifier.
+        Get prediction probabilities.
         
         Args:
-            model_name: HuggingFace model name
-            num_classes: Number of output classes
-            dropout: Dropout rate
+            X: Features to predict on
+        
+        Returns:
+            Decision function scores (use for ROC curves)
+        """
+        return self.model.decision_function(X)
+    
+    def evaluate(self, X_test, y_test):
+        """
+        Evaluate model on test data.
+        
+        Args:
+            X_test: Test features
+            y_test: Test labels
+        
+        Returns:
+            Dictionary of metrics
+        """
+        y_pred = self.predict(X_test)
+        y_scores = self.predict_proba(X_test)
+        
+        metrics = {
+            'accuracy': accuracy_score(y_test, y_pred),
+            'precision': precision_score(y_test, y_pred),
+            'recall': recall_score(y_test, y_pred),
+            'f1': f1_score(y_test, y_pred),
+            'auc': roc_auc_score(y_test, y_scores)
+        }
+        
+        print(f"\nResults:")
+        print(f"  Accuracy:  {metrics['accuracy']:.4f}")
+        print(f"  Precision: {metrics['precision']:.4f}")
+        print(f"  Recall:    {metrics['recall']:.4f}")
+        print(f"  F1-Score:  {metrics['f1']:.4f}")
+        print(f"  AUC-ROC:   {metrics['auc']:.4f}")
+        
+        return metrics
+
+
+class XGBoostTrainer:
+    """
+    Train an XGBoost classifier.
+    """
+    
+    def __init__(self, n_estimators=100, max_depth=7, learning_rate=0.1, random_state=42):
+        """
+        Initialize XGBoost trainer.
+        
+        Args:
+            n_estimators: Number of boosting rounds (default: 100)
+            max_depth: Maximum tree depth (default: 7)
+            learning_rate: Learning rate (default: 0.1)
+            random_state: Random seed (default: 42)
+        """
+        self.model = xgb.XGBClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            random_state=random_state,
+            n_jobs=-1,
+            verbose=1
+        )
+    
+    def train(self, X_train, y_train):
+        """
+        Train the XGBoost model.
+        
+        Args:
+            X_train: Training features
+            y_train: Training labels
+        """
+        print(f"\n{'='*60}")
+        print("MODEL 2: XGBOOST (GLOVE EMBEDDINGS)")
+        print(f"{'='*60}\n")
+        
+        print("Training...")
+        self.model.fit(X_train, y_train, verbose=False)
+        print("✅ Training complete!")
+    
+    def predict(self, X):
+        """
+        Make predictions on new data.
+        
+        Args:
+            X: Features to predict on
+        
+        Returns:
+            Predicted labels
+        """
+        return self.model.predict(X)
+    
+    def predict_proba(self, X):
+        """
+        Get prediction probabilities.
+        
+        Args:
+            X: Features to predict on
+        
+        Returns:
+            Probability for positive class
+        """
+        return self.model.predict_proba(X)[:, 1]
+    
+    def evaluate(self, X_test, y_test):
+        """
+        Evaluate model on test data.
+        
+        Args:
+            X_test: Test features
+            y_test: Test labels
+        
+        Returns:
+            Dictionary of metrics
+        """
+        y_pred = self.predict(X_test)
+        y_proba = self.predict_proba(X_test)
+        
+        metrics = {
+            'accuracy': accuracy_score(y_test, y_pred),
+            'precision': precision_score(y_test, y_pred),
+            'recall': recall_score(y_test, y_pred),
+            'f1': f1_score(y_test, y_pred),
+            'auc': roc_auc_score(y_test, y_proba)
+        }
+        
+        print(f"\nResults:")
+        print(f"  Accuracy:  {metrics['accuracy']:.4f}")
+        print(f"  Precision: {metrics['precision']:.4f}")
+        print(f"  Recall:    {metrics['recall']:.4f}")
+        print(f"  F1-Score:  {metrics['f1']:.4f}")
+        print(f"  AUC-ROC:   {metrics['auc']:.4f}")
+        
+        return metrics
+
+
+class SimpleNN(nn.Module):
+    """
+    Simple feedforward neural network for DistilBERT embeddings.
+    """
+    
+    def __init__(self, input_dim=768):
+        """
+        Initialize neural network.
+        
+        Args:
+            input_dim: Input dimension (default: 768 for DistilBERT)
         """
         super().__init__()
-        self.bert = AutoModel.from_pretrained(model_name)
-        self.dropout = nn.Dropout(dropout)
-        self.classifier = nn.Linear(self.bert.config.hidden_size, num_classes)
+        self.fc1 = nn.Linear(input_dim, 256)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(0.3)
+        self.fc2 = nn.Linear(256, 128)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(0.3)
+        self.fc3 = nn.Linear(128, 2)
     
-    def forward(self, input_ids, attention_mask):
-        """
-        Forward pass.
-        
-        Args:
-            input_ids: Token IDs
-            attention_mask: Attention mask
-            
-        Returns:
-            Logits of shape (batch_size, num_classes)
-        """
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        cls_output = outputs.last_hidden_state[:, 0, :]  # [CLS] token
-        cls_output = self.dropout(cls_output)
-        logits = self.classifier(cls_output)
-        return logits
+    def forward(self, x):
+        """Forward pass."""
+        x = self.fc1(x)
+        x = self.relu1(x)
+        x = self.dropout1(x)
+        x = self.fc2(x)
+        x = self.relu2(x)
+        x = self.dropout2(x)
+        x = self.fc3(x)
+        return x
 
 
-class BERTTrainer:
-    """BERT model trainer."""
+class NeuralNetworkTrainer:
+    """
+    Train a neural network on DistilBERT embeddings.
+    """
     
-    def __init__(self, model_name='bert-base-uncased', device=None, learning_rate=2e-5):
+    def __init__(self, input_dim=768, batch_size=256, learning_rate=0.001, num_epochs=5):
         """
-        Initialize BERT trainer.
+        Initialize neural network trainer.
         
         Args:
-            model_name: HuggingFace model name
-            device: Torch device
-            learning_rate: Learning rate for fine-tuning
+            input_dim: Input dimension (default: 768)
+            batch_size: Batch size (default: 256)
+            learning_rate: Learning rate (default: 0.001)
+            num_epochs: Number of training epochs (default: 5)
         """
-        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model_name = model_name
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = SimpleNN(input_dim).to(self.device)
+        self.batch_size = batch_size
         self.learning_rate = learning_rate
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = BERTClassifier(model_name=model_name).to(self.device)
+        self.num_epochs = num_epochs
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.criterion = nn.CrossEntropyLoss()
     
-    def tokenize_texts(self, texts, max_length=512):
+    def train(self, X_train, y_train):
         """
-        Tokenize texts.
+        Train the neural network.
         
         Args:
-            texts: List of text strings
-            max_length: Maximum sequence length
-            
-        Returns:
-            Tokenized inputs
+            X_train: Training features
+            y_train: Training labels
         """
-        encodings = self.tokenizer(
-            texts,
-            max_length=max_length,
-            padding=True,
-            truncation=True,
-            return_tensors='pt'
-        )
-        return encodings
-    
-    def train(self, texts_train, labels_train, texts_val=None, labels_val=None,
-              epochs=3, batch_size=16, warmup_steps=0):
-        """
-        Fine-tune BERT.
+        print(f"\n{'='*60}")
+        print("MODEL 3: NEURAL NETWORK (DISTILBERT)")
+        print(f"{'='*60}\n")
         
-        Args:
-            texts_train: Training texts
-            labels_train: Training labels
-            texts_val: Validation texts (optional)
-            labels_val: Validation labels (optional)
-            epochs: Number of epochs
-            batch_size: Batch size
-            warmup_steps: Number of warmup steps
-            
-        Returns:
-            Dict with training history
-        """
-        print(f"Fine-tuning BERT for {epochs} epochs on {self.device}...")
-        
-        # Tokenize training data
-        train_encodings = self.tokenize_texts(texts_train)
+        # Create dataset and dataloader
         train_dataset = TensorDataset(
-            train_encodings['input_ids'],
-            train_encodings['attention_mask'],
-            torch.tensor(labels_train)
+            torch.FloatTensor(X_train),
+            torch.LongTensor(y_train)
         )
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
         
-        # Tokenize validation data if provided
-        val_loader = None
-        if texts_val is not None and labels_val is not None:
-            val_encodings = self.tokenize_texts(texts_val)
-            val_dataset = TensorDataset(
-                val_encodings['input_ids'],
-                val_encodings['attention_mask'],
-                torch.tensor(labels_val)
-            )
-            val_loader = DataLoader(val_dataset, batch_size=batch_size)
-        
-        # Optimizer
-        optimizer = AdamW(self.model.parameters(), lr=self.learning_rate)
-        loss_fn = nn.CrossEntropyLoss()
-        
-        # Training loop
-        history = {'train_loss': [], 'val_loss': []}
-        
-        for epoch in range(epochs):
-            # Training
-            self.model.train()
-            train_loss = 0.0
-            
-            for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
-                input_ids, attention_mask, labels = batch
-                input_ids = input_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                labels = labels.to(self.device)
-                
-                # Forward pass
-                logits = self.model(input_ids, attention_mask)
-                loss = loss_fn(logits, labels)
-                
-                # Backward pass
-                optimizer.zero_grad()
+        print("Training neural network...")
+        for epoch in range(self.num_epochs):
+            total_loss = 0
+            for batch_x, batch_y in train_loader:
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                self.optimizer.zero_grad()
+                outputs = self.model(batch_x)
+                loss = self.criterion(outputs, batch_y)
                 loss.backward()
-                optimizer.step()
-                
-                train_loss += loss.item()
-            
-            avg_train_loss = train_loss / len(train_loader)
-            history['train_loss'].append(avg_train_loss)
-            print(f"Epoch {epoch+1} - Train Loss: {avg_train_loss:.4f}")
-            
-            # Validation
-            if val_loader is not None:
-                val_loss = self._evaluate(val_loader, loss_fn)
-                history['val_loss'].append(val_loss)
-                print(f"Epoch {epoch+1} - Val Loss: {val_loss:.4f}")
-        
-        return history
-    
-    def _evaluate(self, data_loader, loss_fn):
-        """Evaluate model on validation set."""
-        self.model.eval()
-        total_loss = 0.0
-        
-        with torch.no_grad():
-            for batch in data_loader:
-                input_ids, attention_mask, labels = batch
-                input_ids = input_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                labels = labels.to(self.device)
-                
-                logits = self.model(input_ids, attention_mask)
-                loss = loss_fn(logits, labels)
+                self.optimizer.step()
                 total_loss += loss.item()
+            print(f"  Epoch {epoch+1}/{self.num_epochs}, Loss: {total_loss/len(train_loader):.4f}")
         
-        return total_loss / len(data_loader)
+        print("✅ Training complete!")
     
-    def predict(self, texts, batch_size=32):
-        """Make predictions."""
-        self.model.eval()
-        encodings = self.tokenize_texts(texts)
-        dataset = TensorDataset(encodings['input_ids'], encodings['attention_mask'])
-        loader = DataLoader(dataset, batch_size=batch_size)
+    def predict(self, X_test):
+        """
+        Make predictions on new data.
+        
+        Args:
+            X_test: Test features
+        
+        Returns:
+            Predicted labels and probabilities
+        """
+        test_dataset = TensorDataset(torch.FloatTensor(X_test))
+        test_loader = DataLoader(test_dataset, batch_size=self.batch_size)
         
         predictions = []
-        with torch.no_grad():
-            for batch in loader:
-                input_ids, attention_mask = batch
-                input_ids = input_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                
-                logits = self.model(input_ids, attention_mask)
-                preds = torch.argmax(logits, dim=1).cpu().numpy()
-                predictions.extend(preds)
-        
-        return np.array(predictions)
-    
-    def predict_proba(self, texts, batch_size=32):
-        """Get prediction probabilities."""
-        self.model.eval()
-        encodings = self.tokenize_texts(texts)
-        dataset = TensorDataset(encodings['input_ids'], encodings['attention_mask'])
-        loader = DataLoader(dataset, batch_size=batch_size)
-        
         probabilities = []
-        with torch.no_grad():
-            for batch in loader:
-                input_ids, attention_mask = batch
-                input_ids = input_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                
-                logits = self.model(input_ids, attention_mask)
-                probs = torch.softmax(logits, dim=1).cpu().numpy()
-                probabilities.extend(probs)
         
-        return np.array(probabilities)
+        self.model.eval()
+        with torch.no_grad():
+            for batch_x, in test_loader:
+                batch_x = batch_x.to(self.device)
+                outputs = self.model(batch_x)
+                probs = torch.softmax(outputs, dim=1)
+                predictions.extend(torch.argmax(outputs, dim=1).cpu().numpy())
+                probabilities.extend(probs[:, 1].cpu().numpy())
+        
+        return np.array(predictions), np.array(probabilities)
     
-    def save(self, path):
-        """Save model."""
-        torch.save(self.model.state_dict(), path)
-    
-    def load(self, path):
-        """Load model."""
-        self.model.load_state_dict(torch.load(path, map_location=self.device))
+    def evaluate(self, X_test, y_test):
+        """
+        Evaluate model on test data.
+        
+        Args:
+            X_test: Test features
+            y_test: Test labels
+        
+        Returns:
+            Dictionary of metrics
+        """
+        y_pred, y_proba = self.predict(X_test)
+        
+        metrics = {
+            'accuracy': accuracy_score(y_test, y_pred),
+            'precision': precision_score(y_test, y_pred),
+            'recall': recall_score(y_test, y_pred),
+            'f1': f1_score(y_test, y_pred),
+            'auc': roc_auc_score(y_test, y_proba)
+        }
+        
+        print(f"\nResults:")
+        print(f"  Accuracy:  {metrics['accuracy']:.4f}")
+        print(f"  Precision: {metrics['precision']:.4f}")
+        print(f"  Recall:    {metrics['recall']:.4f}")
+        print(f"  F1-Score:  {metrics['f1']:.4f}")
+        print(f"  AUC-ROC:   {metrics['auc']:.4f}")
+        
+        return metrics
